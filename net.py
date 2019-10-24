@@ -7,9 +7,12 @@ import seq_resnet
 
 class Encoder(nn.Module):
     '''
-    Input: (N, C=3, H, W)
-    conv_feature: (N, C=2048, H=1, W)
-    Output: 
+    Args:
+        hidden_size: hidden size of LSTM
+    Inputs:
+        img, (N, C=3, H, W)
+        # conv_feature: (N, C=2048, H=1, W)
+    Outputs: 
         # output: (seq_len=W, batch_size=N, input_size=2*hidden_size), 2 for bidirectional
         output: (batch_size=N, seq_len=W, input_size=2*hidden_size), 2 for bidirectional
         h_n, c_n: (num_layers*num_directions=4, batch_size=N, hidden_size)
@@ -38,12 +41,16 @@ class Encoder(nn.Module):
 
 class AttentionDecoderRnn(nn.Module):
     '''
-    Input:
-        decoder_input: last output of decoder, or the target label (for teacher forcing)
+    Args:
+        hidden_size: hidden size
+        output_size: number of classes
+        max_length:
+    Inputs:
+        decoder_input: (batch_size, ), last output character of decoder, or the target label (for teacher forcing)
         hidden: hidden state from last output of decoder, (num_layers*num_directions=4, batch_size, hidden_size=256)
         encoder_output: context vector / encoded feature, (batch_size=N, seq_len=W, input_size=2*hidden_size), 2 for bidirectional
-    Output:
-        output: (N, seq_len, output_size)
+    Outputs:
+        output: (N, output_size)
         hidden: (h_n, c_n) for LSTM, h_n for GRU
     '''
 
@@ -59,9 +66,9 @@ class AttentionDecoderRnn(nn.Module):
         # self.attention = nn.Linear(self.hidden_size * 2, max_length)
         # self.attention_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
         # self.gru = nn.GRU(self.hidden_size, self.hidden_size, num_layers=2, bidirectional=2)
-        self.lstm = nn.LSTM(input_size=self.hidden_size, hidden_size=self.hidden_size, num_layers=2, batch_first=True, bidirectional=True)
-        self.out = nn.Linear(self.hidden_size*2, self.output_size)
-        self.with_attention = None
+        self.lstm = nn.LSTM(input_size=self.hidden_size, hidden_size=self.hidden_size, num_layers=1, batch_first=True, bidirectional=False)
+        self.out = nn.Linear(self.hidden_size, self.output_size)
+        self.with_attention = False
 
     def forward(self, decoder_input, hidden, encoder_outputs):
         # print('decoder_intput.shape = ', decoder_input.shape)
@@ -91,23 +98,67 @@ class AttentionDecoderRnn(nn.Module):
             print('output.shape = ', output.shape)
 
         else:
-            output = decoder_input
+            output = self.embedding(decoder_input.long()).unsqueeze(1)      # (batch_size, embedding_dim) --> (batch_size, seq_len=1, embedding_dim)
             attention_weights = None
 
         # output, hidden = self.gru(output, hidden)
         output, hidden = self.lstm(output, hidden)
 
-        output = F.log_softmax(self.out(output), dim=1)
+        output = F.log_softmax(self.out(output.squeeze(dim=1)), dim=1)
 
         return output, hidden, attention_weights
+
+
+class Seq2SeqNetwork(nn.Module):
+    '''
+    Args:
+        hidden_size: hidden size of LSTM/GRU in both encoder and decoder
+        output_size: output size of decoder, equals to num_classes + 2 (for EOS/BOS)
+        max_length: maximum length of input sequence
+    Inputs:
+        img: (N, C=3, H=32, W)
+        label: (N, max_length)
+    Outputs:
+        outputs: (batch_size, max(label_lengths), output_size)
+    '''
+    
+    def __init__(self, hidden_size, output_size):
+        super().__init__()
+
+        self.encoder = Encoder(hidden_size)
+        self.decoder = AttentionDecoderRnn(hidden_size, output_size, max_length=128)
+        self.num_classes = 26
+        self.teacher_forcing = True
+        # self.max_length = max_length
+
+    def forward(self, img, label, label_lengths):
+
+        encoder_output, _ = self.encoder(img)
+        batch_size, seq_len, _ = encoder_output.size()
+        print(batch_size, seq_len, _)
+
+        decoder_input, hidden_state = torch.zeros((batch_size)).fill_(self.num_classes), None
+        outputs = []
+
+        if self.teacher_forcing:
+            for i in range(max(label_lengths)):
+                decoder_output, hidden_state, attention_weights = self.decoder(decoder_input, hidden_state, encoder_output)
+                outputs.append(decoder_output)
+                decoder_input = label[:, i]
+        else:
+            raise NotImplementedError('Training without teacher forcing not implemented.')
+
+        print(outputs[-1].shape)
+        outputs = torch.cat([output.unsqueeze(dim=1) for output in outputs], dim=1)
+        return outputs
 
 
 
 if __name__ == "__main__":
     # encoder_layer = nn.TransformerEncoderLayer(d_model=512, nhead=8)
-    encoder_layer = Encoder()
-    decoder = AttentionDecoderRnn(hidden_size=256, output_size=28, max_length=100)
-    print(encoder_layer)
+    # encoder_layer = Encoder()
+    # decoder = AttentionDecoderRnn(hidden_size=256, output_size=28, max_length=100)
+    # print(encoder_layer)
     batch_size = 5
     output_size = 28
     hidden_size = 256
@@ -115,12 +166,19 @@ if __name__ == "__main__":
     # transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=6)
     # print(transformer_encoder)
     from torchsummaryX import summary
-    src = torch.rand(5, 3, 32, 128)
+    import random
+    img = torch.rand(batch_size, 3, 32, 128)
+    labels = torch.randint(low=0, high=28, size=(batch_size, seq_len))
+    label_lengths = [random.randint(0, seq_len) for _ in range(seq_len)]
     # summary(encoder_layer, src)
-    encoder_output, hidden = encoder_layer(src)
-    # fake_hidden = torch.randint(low=0, high=28, size=(batch_size, output_size))
-    # fake_hidden = torch.rand(hbatch_size, output_size)
-    # fake_decoder_input = torch.randint(low=0, high=28, size=(output_size, batch_size, hidden_size))
-    fake_decoder_input = torch.rand(batch_size, seq_len, hidden_size)
-    # fake_decoder_input = torch.tensor([[0]])
-    output, hidden, attention_weights = decoder(fake_decoder_input, hidden, encoder_output)
+    # encoder_output, hidden = encoder_layer(src)
+    # # fake_hidden = torch.randint(low=0, high=28, size=(batch_size, output_size))
+    # # fake_hidden = torch.rand(hbatch_size, output_size)
+    # # fake_decoder_input = torch.randint(low=0, high=28, size=(output_size, batch_size, hidden_size))
+    # fake_decoder_input = torch.rand(batch_size, seq_len, hidden_size)
+    # # fake_decoder_input = torch.tensor([[0]])
+    # output, hidden, attention_weights = decoder(fake_decoder_input, hidden=None, encoder_outputs=encoder_output)
+
+    model = Seq2SeqNetwork(hidden_size, output_size)
+    output = model(img, labels, label_lengths)
+    print(output.shape)
