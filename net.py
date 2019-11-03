@@ -118,6 +118,7 @@ class Seq2SeqNetwork(nn.Module):
     Inputs:
         img: (N, C=3, H=32, W)
         label: (N, max_length)
+        label_lengths: lengths for each label, (N, )
     Outputs:
         outputs: (batch_size, max(label_lengths), output_size)
     '''
