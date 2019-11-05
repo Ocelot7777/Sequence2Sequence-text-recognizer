@@ -44,7 +44,7 @@ class AttentionDecoderRnn(nn.Module):
     Args:
         hidden_size: hidden size
         output_size: number of classes
-        max_length:
+        max_label_length: A pre-defined length, used for aligning variable-length sequences.
     Inputs:
         decoder_input: (batch_size, ), last output character of decoder, or the target label (for teacher forcing)
         hidden: hidden state from last output of decoder, (num_layers*num_directions=4, batch_size, hidden_size=256)
@@ -54,16 +54,17 @@ class AttentionDecoderRnn(nn.Module):
         hidden: (h_n, c_n) for LSTM, h_n for GRU
     '''
 
-    def __init__(self, hidden_size, output_size, max_length):
+    def __init__(self, hidden_size, output_size, max_label_length):
         super().__init__()
 
         self.hidden_size = hidden_size
         self.output_size = output_size
-        self.max_length = max_length
+        self.max_label_length = max_label_length
         
-        self.embedding = nn.Embedding(num_embeddings=self.output_size, embedding_dim=self.hidden_size)
+        # Note that we should add an BOS/SOS to start decoder, thus num_embedding=output_size+1
+        self.embedding = nn.Embedding(num_embeddings=self.output_size+1, embedding_dim=self.hidden_size)
         # compute the weights
-        # self.attention = nn.Linear(self.hidden_size * 2, max_length)
+        # self.attention = nn.Linear(self.hidden_size * 2, max_label_length)
         # self.attention_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
         # self.gru = nn.GRU(self.hidden_size, self.hidden_size, num_layers=2, bidirectional=2)
         self.lstm = nn.LSTM(input_size=self.hidden_size, hidden_size=self.hidden_size, num_layers=1, batch_first=True, bidirectional=False)
@@ -113,32 +114,30 @@ class Seq2SeqNetwork(nn.Module):
     '''
     Args:
         hidden_size: hidden size of LSTM/GRU in both encoder and decoder
-        output_size: output size of decoder, equals to num_classes + 2 (for EOS/BOS)
-        max_length: maximum length of input sequence
+        output_size: output size of decoder, equals to num_classes, including EOS, PADDING, UNKNOWN, except BOS
+        max_label_length: maximum length of input sequence
     Inputs:
         img: (N, C=3, H=32, W)
-        label: (N, max_length)
+        label: (N, max_label_length)
         label_lengths: lengths for each label, (N, )
     Outputs:
         outputs: (batch_size, max(label_lengths), output_size)
     '''
     
-    def __init__(self, hidden_size, output_size):
+    def __init__(self, hidden_size, output_size, max_label_length):
         super().__init__()
 
         self.encoder = Encoder(hidden_size)
-        self.decoder = AttentionDecoderRnn(hidden_size, output_size, max_length=128)
-        self.num_classes = 26
+        self.decoder = AttentionDecoderRnn(hidden_size, output_size, max_label_length)
+        self.output_size = output_size
         self.teacher_forcing = True
-        # self.max_length = max_length
 
     def forward(self, img, label, label_lengths):
 
         encoder_output, _ = self.encoder(img)
         batch_size, seq_len, _ = encoder_output.size()
-        print(batch_size, seq_len, _)
 
-        decoder_input, hidden_state = torch.zeros((batch_size)).fill_(self.num_classes), None
+        decoder_input, hidden_state = torch.zeros((batch_size)).fill_(self.output_size), None
         outputs = []
 
         if self.teacher_forcing:
@@ -149,7 +148,6 @@ class Seq2SeqNetwork(nn.Module):
         else:
             raise NotImplementedError('Training without teacher forcing not implemented.')
 
-        print(outputs[-1].shape)
         outputs = torch.cat([output.unsqueeze(dim=1) for output in outputs], dim=1)
         return outputs
 

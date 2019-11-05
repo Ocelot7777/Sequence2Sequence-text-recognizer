@@ -6,6 +6,7 @@ from tqdm import tqdm
 import scipy.io as sio
 import time
 from scipy import io as sio
+import argparse
 
 
 def checkImageIsValid(imageBin):
@@ -96,32 +97,32 @@ def get_list(txt_name, root_dir):
         count += 1
     return img_paths, labels
 
-def synth90k():
-    root_dir = '/home/HuangCH/Synth90k/'
+def synth90k(root_dir):
+    # root_dir = '/home/HuangCH/Synth90k/'
     annotation_path = os.path.join(root_dir, '90kDICT32px')
+    if not os.path.exists(annotation_path):
+        raise FileExistsError('Please make sure the root dir contains a dir named <90kDICT32px>')
     train_txt_name = 'annotation_train.txt'
     val_txt_name = 'annotation_val.txt'
     
-    train_output_path = os.path.join(root_dir, 'train')
     val_output_path = os.path.join(root_dir, 'val')
-
-    print('start getting list')
-    train_img_paths, train_labels = get_list(train_txt_name, annotation_path)
     val_img_paths, val_labels = get_list(val_txt_name, annotation_path)
-    print('finish getting list')
-
-    print('start creating dataset')
-    create_dataset(train_output_path, train_img_paths, train_labels, checkValid=True)
     create_dataset(val_output_path, val_img_paths, val_labels, checkValid=True)
-    print('finish creating dataset')
 
-def IIIT5k():
-    train_output_path = './lmdb_train/'
-    test_output_path = './lmdb_test/'
+    train_output_path = os.path.join(root_dir, 'train')
+    train_img_paths, train_labels = get_list(train_txt_name, annotation_path)
+    create_dataset(train_output_path, train_img_paths, train_labels, checkValid=True)
+
+
+def IIIT5k(root, train_output_path=None, test_output_path=None):
+    if train_output_path is None:
+        train_output_path = os.path.join(root, './lmdb_train/')
+    if test_output_path is None:
+        test_output_path = os.path.join(root, './lmdb_test/')
 
     print('start loading mat')
-    train_data_mat_path = './traindata.mat'
-    test_data_mat_path = './testdata.mat'
+    train_data_mat_path = os.path.join(root, 'traindata.mat')
+    test_data_mat_path = os.path.join(root, 'testdata.mat')
     train_data_mat = sio.loadmat(train_data_mat_path)
     test_data_mat = sio.loadmat(test_data_mat_path)
     print('finished loading mat')
@@ -153,12 +154,20 @@ def IIIT5k():
     create_dataset(test_output_path, test_img_paths, test_labels)
     print('finished creating lmdb')
 
-
+def main(args):
+    dataset_name = args.dataset.lower()
+    if dataset_name == 'synth90k':
+        synth90k(args.root)
+    elif dataset_name == 'iiit5k':
+        IIIT5k(args.root)
+    else:
+        raise NotImplementedError('only support Synth90k and IIIT5K now')
 
 
 if __name__ == "__main__":
-    # start_time = time.time()
-    # synth90k()
-    # end_time = time.time()
-    # print('time cost = {:.3f}'.format(end_time - start_time))
-    IIIT5k()
+    parser = argparse.ArgumentParser(description='Hyper Parameters')
+    parser.add_argument('--dataset', type=str, help='name of the dataset')
+    parser.add_argument('--root', nargs='?', type=str, default=None, help='if the synth90k dataset, should contains the dir of 90kDICT32px')
+
+    args = parser.parse_args()
+    main(args)
