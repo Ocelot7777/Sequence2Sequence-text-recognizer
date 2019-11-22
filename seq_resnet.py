@@ -139,19 +139,19 @@ class ResNet(nn.Module):
                              "or a 3-element tuple, got {}".format(replace_stride_with_dilation))
         self.groups = groups
         self.base_width = width_per_group
-        self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=7, stride=stride, padding=3,
+        self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=7, stride=1, padding=3,
                                bias=False)
         self.bn1 = norm_layer(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=stride, padding=1)
-        self.layer1 = self._make_layer(block, 64, layers[0])
-        self.layer2 = self._make_layer(block, 128, layers[1], stride=stride,
+        # self.maxpool = nn.MaxPool2d(kernel_size=3, stride=stride, padding=1)
+        self.layer1 = self._make_layer(block, 64, layers[0], stride=2)
+        self.layer2 = self._make_layer(block, 128, layers[1], stride=2,
                                        dilate=replace_stride_with_dilation[0])
         self.layer3 = self._make_layer(block, 256, layers[2], stride=stride,
                                        dilate=replace_stride_with_dilation[1])
         self.layer4 = self._make_layer(block, 512, layers[3], stride=stride,
                                        dilate=replace_stride_with_dilation[2])
-        # self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        self.avgpool = nn.AdaptiveAvgPool2d((1, None))
         # self.fc = nn.Linear(512 * block.expansion, num_classes)
 
         for m in self.modules():
@@ -199,28 +199,17 @@ class ResNet(nn.Module):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
-        x = self.maxpool(x)
+        # x = self.maxpool(x)
 
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
 
-        # x = self.avgpool(x)
+        x = self.avgpool(x)
         # x = torch.flatten(x, 1)
         # x = self.fc(x)
 
-        # if self.with_lstm:
-        #     # (N, C, H=1, W) --> (N, C, W)
-        #     conv_feature = torch.squeeze(x, 2)
-        #     # lstm expects the input of (batch, seq_len, input_size)
-        #     # seq_len <==> W, input_size <==> C
-        #     conv_feature = conv_feature.transpose(1, 2)
-        #     output, (h_n, c_n) = self.lstm(conv_feature)
-
-        #     return output, (h_n, c_n)
-        # else:
-        #     return x
         return x
 
 
@@ -360,7 +349,7 @@ def wide_resnet101_2(pretrained=False, progress=True, **kwargs):
 if __name__ == "__main__":
     x = torch.randn(3, 3, 32, 128)
     # net = ResNet_ASTER(use_self_attention=True, use_position_embedding=True)
-    net = resnet50(stride=(2, 1), with_lstm=True)
+    net = resnet50(stride=(2, 1))
     print(net)
     encoder_feat = net(x)
     print(encoder_feat.size())

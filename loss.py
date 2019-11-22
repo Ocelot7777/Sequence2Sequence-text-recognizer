@@ -32,7 +32,8 @@ class SequenceLoss(nn.Module):
 
         output = self.loss(pred, label) * mask
         
-        return torch.mean(output)
+        eps = 1e-5
+        return torch.sum(output) / (torch.sum(mask) + eps)
 
 
 if __name__ == "__main__":

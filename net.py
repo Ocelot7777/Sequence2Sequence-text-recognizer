@@ -26,7 +26,6 @@ class Encoder(nn.Module):
         # self.embedding = nn.Embedding(input_size, hidden_size)
 
     def forward(self, x):
-        print('x.shape = ', x.shape)
         conv_feature = self.conv(x)
         # lstm expects the input of (batch, seq_len, input_size)
         # seq_len <==> W, input_size <==> C
@@ -64,9 +63,9 @@ class AttentionDecoderRnn(nn.Module):
         # Note that we should add an BOS/SOS to start decoder, thus num_embedding=output_size+1
         self.embedding = nn.Embedding(num_embeddings=self.output_size+1, embedding_dim=self.hidden_size)
         # compute the weights
-        # self.attention = nn.Linear(self.hidden_size * 2, max_label_length)
-        # self.attention_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
-        # self.gru = nn.GRU(self.hidden_size, self.hidden_size, num_layers=2, bidirectional=2)
+        self.attention = nn.Linear(self.hidden_size * 2, max_label_length)
+        self.attention_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
+        self.gru = nn.GRU(input_size=self.hidden_size, hidden_size=self.hidden_size, num_layers=2, batch_first=True)
         self.lstm = nn.LSTM(input_size=self.hidden_size, hidden_size=self.hidden_size, num_layers=1, batch_first=True, bidirectional=False)
         self.out = nn.Linear(self.hidden_size, self.output_size)
         self.with_attention = False
@@ -79,9 +78,12 @@ class AttentionDecoderRnn(nn.Module):
             raise NotImplementedError
 
             print('encoder_outputs.shape = ', encoder_outputs.shape)
-            embedded = self.embedding(decoder_input)        # (x.size, embedding_dim)
+            embedded = self.embedding(decoder_input.long())        # (batch_size, embedding_dim)
             print('embedded.shape = ', embedded.shape)
             print(embedded.dtype)
+            if isinstance(hidden, tuple):
+                hidden = hidden[0]
+            hidden = hidden.reshape(-1, hidden.size(2))     # (batch_size * T, hidden_size)
             print(hidden.dtype)
             attention_weights = F.softmax(
                 self.attention(torch.cat((embedded, hidden), dim=1)), dim=1
@@ -140,13 +142,14 @@ class Seq2SeqNetwork(nn.Module):
         decoder_input, hidden_state = torch.zeros((batch_size)).fill_(self.output_size), None
         outputs = []
 
-        if self.teacher_forcing:
-            for i in range(max(label_lengths)):
-                decoder_output, hidden_state, attention_weights = self.decoder(decoder_input, hidden_state, encoder_output)
-                outputs.append(decoder_output)
-                decoder_input = label[:, i]
-        else:
-            raise NotImplementedError('Training without teacher forcing not implemented.')
+        for i in range(max(label_lengths)):
+            decoder_output, hidden_state, attention_weights = self.decoder(decoder_input, hidden_state, encoder_output)
+            outputs.append(decoder_output)
+            # if self.training and self.teacher_forcing:
+            #     decoder_input = label[:, i]
+            # else:
+            #     decoder_input = torch.argmax(decoder_output, dim=-1)
+            decoder_input = label[:, i]
 
         outputs = torch.cat([output.unsqueeze(dim=1) for output in outputs], dim=1)
         return outputs
@@ -169,6 +172,7 @@ if __name__ == "__main__":
     img = torch.rand(batch_size, 3, 32, 128)
     labels = torch.randint(low=0, high=28, size=(batch_size, seq_len))
     label_lengths = [random.randint(0, seq_len) for _ in range(seq_len)]
+    max_label_length = 64
     # summary(encoder_layer, src)
     # encoder_output, hidden = encoder_layer(src)
     # # fake_hidden = torch.randint(low=0, high=28, size=(batch_size, output_size))
@@ -178,6 +182,6 @@ if __name__ == "__main__":
     # # fake_decoder_input = torch.tensor([[0]])
     # output, hidden, attention_weights = decoder(fake_decoder_input, hidden=None, encoder_outputs=encoder_output)
 
-    model = Seq2SeqNetwork(hidden_size, output_size)
+    model = Seq2SeqNetwork(hidden_size, output_size, max_label_length)
     output = model(img, labels, label_lengths)
     print(output.shape)

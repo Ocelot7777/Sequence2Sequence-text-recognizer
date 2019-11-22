@@ -1,6 +1,39 @@
 import string
 
 
+class Validator(object):
+    def __init__(self, voc_type):
+        self.voc_type = voc_type
+        self.char2id = get_dict(dict_type='CHAR2ID', voc_type=self.voc_type)
+        self.id2char = get_dict(dict_type='ID2CHAR', voc_type=self.voc_type)
+
+        self.reset()
+        
+    def reset(self):
+        self.precision = 0.
+        self.correct_num = 0
+        self.total_num = 0
+
+    def update(self):
+        self.precision = self.correct_num / self.total_num
+
+    def validate(self, preds, labels, label_lengths):
+        '''Validate the number of correct predictions
+        Inputs:
+            preds: network output followed by a argmax, (batch_size, max_label_length)
+            labels: ground truth, (batch_size, max_label_length)
+            label_lengths: ground truth. (batch_size, )
+        '''
+        preds, labels, label_lengths = preds.tolist(), labels.tolist(), label_lengths.tolist()
+        for pred, label, label_length in zip(preds, labels, label_lengths):
+            # print('pred = ', pred)
+            # print('label = ', label)
+            # print('label_lengths = ', label_length)
+            if pred[:label_length] == label[:label_length]:
+                self.correct_num += 1
+        self.total_num += len(label_lengths)
+
+
 class AverageMeter(object):
     '''compute and store the average and current value'''
     def __init__(self):

@@ -24,6 +24,8 @@ def train(args):
     # Prepare optimizer and scheduler
 
     # Start training loop
+    if args.resume:
+        model.val()
     for epoch in range(args.max_epoch):
         model.train()
         model.scheduler.step()
@@ -49,7 +51,7 @@ if __name__ == "__main__":
     parser.add_argument('--img_width', type=int, default=128, help='Target width of the resized input image.')
 
     # Parameters for dataLoader
-    parser.add_argument('--batch_size', type=int, default=128)
+    parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--num_workers', type=int, default=8)
 
     # Parameters for optimizer

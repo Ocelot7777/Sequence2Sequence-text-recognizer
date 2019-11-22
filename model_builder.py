@@ -1,8 +1,10 @@
 import torch
+import os
 import time
 
+from tqdm import tqdm
 from net import Seq2SeqNetwork
-from utils import AverageMeter
+from utils import AverageMeter, Validator
 from training_tools import TrainingTools
 from dataset import LmdbDataset
 from loss import SequenceLoss
@@ -19,8 +21,7 @@ class Seq2SeqTextRecognizer(object):
         self.data_time = AverageMeter()
         self.train_losses = AverageMeter()
         self.val_losses = AverageMeter()
-
-        self.eval_score = None
+        self.validator = Validator(self.args.voc_type)
 
         self.net = None
         self.criterion = SequenceLoss()
@@ -33,7 +34,7 @@ class Seq2SeqTextRecognizer(object):
 
         self.device = None
 
-        # store the info such as epoch, iter
+        # store the info such as epoch, iter, best_precision
         self.state = dict()
 
         self._init_model()
@@ -53,7 +54,7 @@ class Seq2SeqTextRecognizer(object):
             self.val_loader = None
 
         # Prepare the network
-        self.net = Seq2SeqNetwork(self.args.hidden_size, self.train_set.num_classes, self.args.max_label_length)
+        self.net = Seq2SeqNetwork(self.args.hidden_size, self.train_set.num_classes, self.args.max_label_length).to(self.device)
         
         # Prepare optimizer and scheduler
         if self.args.optimizer == 'Adam':
@@ -66,10 +67,11 @@ class Seq2SeqTextRecognizer(object):
 
         # Resume or initiate training
         if self.args.resume:
-            raise NotImplementedError
-        else:
-            self.state['epoch'] = 0
-            self.state['iters'] = 0
+            self.net.load_state_dict(torch.load(self.args.resume))
+        # else:
+        self.state['epoch'] = 0
+        self.state['iters'] = 0
+        self.state['best_precision'] = 0.
 
 
 
@@ -100,45 +102,68 @@ class Seq2SeqTextRecognizer(object):
             self.state['iters'] += 1
 
 
+            # Save the model
+            if self.state['iters'] % self.args.save_iter == 0:
+                save_file_name = 'model_iters_{}_epoch_{}_loss_{:.3f}.pth'.format(self.state['iters'], self.state['epoch'], self.train_losses.avg)
+                save_path = os.path.join(self.args.output_path, save_file_name)
+                torch.save(self.net.state_dict(), save_path)
+                print('Model has been saved to {}'.format(save_path))
+
             # Print the log info
             if self.state['iters'] % self.args.print_iter == 0:
-                print('epoch: {}, iters: {}/{}, batch_time: {:.2f}, data_time: {:.3f}, avg_loss: {:.3f}'.format(
+                print('epoch: {}, iters: {}/{}, batch_time: {:.2f}, data_time: {:.3f}, avg_loss: {:.3f}, best_precision: {:.4f}'.format(
                     self.state['epoch'],
                     self.state['iters'],
                     len(self.train_loader),
                     self.batch_time.val,
                     self.data_time.val,
-                    self.train_losses.avg
+                    self.train_losses.avg,
+                    self.state['best_precision']
                 ))
                 self.batch_time.reset()
                 self.data_time.reset()
                 self.train_losses.reset()
-                input('====================================')
 
-            # if self.state['iters'] % self.args.val_iter == 0:
-            #     self.val()
+            # Validation
+            if self.state['iters'] % self.args.val_iter == 0:
+                self.val()
 
     def val(self):
         ''' validate the model during training '''
         self.net.eval()
         start_time = time.time()
-        eval_result = None
         with torch.no_grad():
-            for i, data_dict in enumerate(self.val_loader):
+            # for i, data_list in enumerate(self.val_loader):
+            for data_list in tqdm(self.val_loader):
+                data_list = TrainingTools.data_to_device(data_list, self.device)
+                img, label, label_length = data_list
+
                 # Forward
-                data_dict = TrainingTools.data_to_device(data_dict, self.device)
-                out = self.net(data_dict)
-                loss = self.criterion(out)
+                out = self.net(img, label, label_length)
+                loss = self.criterion(out, label, label_length)
                 self.val_losses.update(loss.item())
 
-                # Calculate the precision
-                raise NotImplementedError
+                # Validate the prediction
+                self.validator.validate(torch.argmax(out, dim=-1), label, label_length)
                 self.batch_time.update(time.time() - start_time)
                 start_time = time.time()
-            
-            print('Evaluation time: {}'.format(self.batch_time.sum))
 
-            self.eval_score.reset()
+            self.validator.update()
+            
+            # Print the log info
+            print('Evaluation time: {}'.format(self.batch_time.sum))
+            print('Correct/Total: {}/{}, Precision: {:.4f}'.format(self.validator.correct_num, self.validator.total_num, self.validator.precision))
+            print('Validation loss: {:.3f}'.format(self.val_losses.avg))
+
+            # Save the model
+            if self.validator.precision > self.state['best_precision']:
+                self.state['best_precision'] = self.validator.precision
+                save_file_name = 'model_best_precision_{:.4f}_loss_{:.3f}'.format(self.validator.precision, self.val_losses.avg)
+                save_file_path = os.path.join(self.args.output_path, save_file_name)
+                torch.save(self.net.state_dict(), save_file_path)
+                print('Best model has been saved to {}'.format(save_file_path))
+
+            self.validator.reset()
             self.batch_time.reset()
             self.val_losses.reset()
             self.net.train()

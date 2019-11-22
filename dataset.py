@@ -75,7 +75,7 @@ class LmdbDataset(data.Dataset):
         label = np.full((self.max_label_length, ), self.char2id['PADDING'], dtype=np.int)
         label[:label_length] = np.array(label_list)
 
-        return self.img_transforms(img), torch.tensor(label, dtype=torch.int), torch.tensor(label_length, dtype=torch.int)
+        return self.img_transforms(img), torch.tensor(label, dtype=torch.int, device='cpu'), torch.tensor(label_length, dtype=torch.int, device='cpu')
 
 
 class MyCollateFn(object):
