@@ -60,6 +60,8 @@ def get_dict(dict_type: str, voc_type: str,  EOS='EOS', PADDING='PADDING', UNKNO
         vocabulary.extend(string.digits + string.ascii_uppercase)
     elif voc_type.upper() == 'ALL_CASE':
         vocabulary.extend(string.digits + string.ascii_letters)
+    elif voc_type.upper() == 'ALL':
+        vocabulary.extend(string.printable[:-6])
     else:
         raise KeyError('voc_type must be LOWER_CASE, UPPER_CASE or ALL_CASE')
 

@@ -14,7 +14,8 @@ class SequenceLoss(nn.Module):
     '''
     def __init__(self):
         super().__init__()
-        self.loss = nn.NLLLoss(reduction='none')
+        # self.loss = nn.NLLLoss(reduction='none')
+        self.loss = nn.CrossEntropyLoss(reduction='none')
 
     def forward(self, pred, label, lengths):
         batch_size , max_length = label.size(0), max(lengths)
@@ -22,15 +23,19 @@ class SequenceLoss(nn.Module):
         mask = torch.zeros((batch_size, max_length))
         for i in range(batch_size):
             mask[i, :lengths[i]].fill_(1)
+        mask = mask.unsqueeze(2)
         mask = mask.type_as(pred)
 
         # assert pred.size(1) == max_length
         label = label[:, :max_length].long()
 
+        pred = pred * mask
+
         # (N, max_seq_len, C) --> (N, C, max_seq_len)
         pred = pred.transpose(1, 2)
 
-        output = self.loss(pred, label) * mask
+        # output = self.loss(pred, label) * mask
+        output = self.loss(pred, label)
         
         eps = 1e-5
         return torch.sum(output) / (torch.sum(mask) + eps)

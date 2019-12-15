@@ -25,7 +25,7 @@ def train(args):
 
     # Start training loop
     if args.resume:
-        model.val()
+        model.validate()
     for epoch in range(args.max_epoch):
         model.train()
         model.scheduler.step()
@@ -46,7 +46,7 @@ if __name__ == "__main__":
     # Parameters for dataset
     parser.add_argument('--train_root', type=str, help='Root directory of the training_set.')
     parser.add_argument('--test_root', type=str, help='Root directory of the test_set.')
-    parser.add_argument('--voc_type', type=str, default='ALL_CASE', choices=['LOWER_CASE', 'UPPER_CASE', 'ALL_CASE'])
+    parser.add_argument('--voc_type', type=str, default='ALL', choices=['LOWER_CASE', 'UPPER_CASE', 'ALL_CASE', 'ALL'])
     parser.add_argument('--img_height', type=int, default=32, help='Target height of the resized input image.')
     parser.add_argument('--img_width', type=int, default=128, help='Target width of the resized input image.')
 
@@ -55,14 +55,17 @@ if __name__ == "__main__":
     parser.add_argument('--num_workers', type=int, default=8)
 
     # Parameters for optimizer
-    parser.add_argument('--optimizer', type=str, default='Adam', choices=['Adam', 'SGD'])
+    parser.add_argument('--optimizer', type=str, default='Adam', choices=['Adam', 'SGD', 'Adadelta'])
     parser.add_argument('--lr', type=float, default=1.)
     parser.add_argument('--momentum', type=float, default=0.9)
     parser.add_argument('--weight_decay', type=float, default=0.)
-    parser.add_argument('--milestones', type=list, default=[3, 5], help='Milestones used for MultiStepLR scheduler.')
+    parser.add_argument('--milestones', type=list, default=[2, 4], help='Milestones used for MultiStepLR scheduler.')
 
     # Parameters for network
     parser.add_argument('--resume', type=str, default='', help='pth path.')
+    parser.add_argument('--backbone', type=str, default='resnet50', help='Backbone used in encoder to extract features.')
+    # parser.add_argument('--with_attention', type=bool, default=True, help='Whether to use attention.')
+    parser.add_argument('--with_attention', action='store_true', help='Whether to use attention.')
     parser.add_argument('--hidden_size', type=int, default=256, help='The hidden_size used for encoder and decoder.')
     parser.add_argument('--output_size', type=int, default=38, help='The output_size used for seq2seq network, usually equals to num_classes + 2.')
     parser.add_argument('--max_label_length', type=int, default=64, help='A pre-defined length, used for aligning variable-length sequences.')
